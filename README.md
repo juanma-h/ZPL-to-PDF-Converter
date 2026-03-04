@@ -44,7 +44,7 @@ python src/main.py
 
 ## Como funciona la conversion local
 
-1. La app lee tu `.txt` con ZPL.
+1. La app lee el `.txt` con ZPL.
 2. Ejecuta `renderer/render_zpl_local.mjs` con `node`.
 3. El renderer genera PNG locales (sin red).
 4. Si elegiste PDF, la app une los PNG en un unico PDF.
@@ -57,10 +57,3 @@ pyinstaller --noconfirm --onefile --windowed --name ZPLConverter src/main.py
 ```
 
 Si usas `--onefile`, recuerda incluir la carpeta `renderer` (script y dependencias) en tu instalador/distribucion final.
-
-## macOS Apple Silicon (M1+)
-
-- Usa una Mac Apple Silicon para generar binario nativo.
-- Instala Python y Node en esa Mac.
-- Repite los pasos de instalacion y empaquetado en macOS.
-
