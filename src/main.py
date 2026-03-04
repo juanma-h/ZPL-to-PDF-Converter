@@ -1,15 +1,19 @@
 import io
+import json
 import os
-import re
+import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
-from typing import List
+from pathlib import Path
+from typing import List, Sequence
 
-import requests
 from PIL import Image
 from PySide6.QtCore import QObject, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -18,17 +22,16 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
-    QPushButton,
-    QComboBox,
     QProgressBar,
+    QPushButton,
     QSpinBox,
-    QDoubleSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 
-LABELARY_URL_TEMPLATE = "https://api.labelary.com/v1/printers/{dpmm}dpmm/labels/{width}x{height}/0/"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+LOCAL_RENDERER_SCRIPT = PROJECT_ROOT / "renderer" / "render_zpl_local.mjs"
 
 
 @dataclass
@@ -42,76 +45,24 @@ class ConversionConfig:
     png_prefix: str
 
 
-def parse_zpl_labels(zpl_text: str) -> List[str]:
-    pattern = re.compile(r"\^XA.*?\^XZ", re.IGNORECASE | re.DOTALL)
-    labels = [match.strip() for match in pattern.findall(zpl_text)]
-    if labels:
-        return labels
-
-    text = zpl_text.strip()
-    if not text:
-        return []
-
-    if "^XZ" in text.upper():
-        chunks = re.split(r"(?i)\^XZ", text)
-        normalized = []
-        for chunk in chunks:
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-            if "^XA" not in chunk.upper():
-                chunk = "^XA\n" + chunk
-            normalized.append(chunk + "\n^XZ")
-        return normalized
-
-    if "^XA" not in text.upper():
-        text = "^XA\n" + text
-    if "^XZ" not in text.upper():
-        text = text + "\n^XZ"
-    return [text]
+def ensure_pdf_extension(output_file: str) -> str:
+    if output_file.lower().endswith(".pdf"):
+        return output_file
+    return output_file + ".pdf"
 
 
-def render_label_png(zpl: str, width_in: float, height_in: float, dpmm: int) -> bytes:
-    url = LABELARY_URL_TEMPLATE.format(
-        dpmm=dpmm,
-        width=f"{width_in:.2f}",
-        height=f"{height_in:.2f}",
-    )
-    response = requests.post(
-        url,
-        data=zpl.encode("utf-8"),
-        headers={"Accept": "image/png"},
-        timeout=30,
-    )
-
-    if response.status_code != 200:
-        details = response.text.strip().replace("\n", " ")
-        if len(details) > 180:
-            details = details[:180] + "..."
-        raise RuntimeError(f"Labelary devolvio {response.status_code}. {details}")
-
-    return response.content
-
-
-def save_png_files(images: List[bytes], output_dir: str, prefix: str) -> List[str]:
-    os.makedirs(output_dir, exist_ok=True)
-    saved_paths = []
-    for idx, image_bytes in enumerate(images, start=1):
-        output_file = os.path.join(output_dir, f"{prefix}_{idx:03d}.png")
-        with open(output_file, "wb") as f:
-            f.write(image_bytes)
-        saved_paths.append(output_file)
-    return saved_paths
-
-
-def save_pdf_file(images: List[bytes], output_file: str) -> str:
-    if not output_file.lower().endswith(".pdf"):
-        output_file += ".pdf"
+def save_pdf_file(image_paths: Sequence[str], output_file: str) -> str:
+    output_file = ensure_pdf_extension(output_file)
 
     pil_images = []
-    for image_bytes in images:
+    for image_path in image_paths:
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         pil_images.append(image)
+
+    if not pil_images:
+        raise ValueError("No se encontraron imagenes para crear el PDF.")
 
     first, *rest = pil_images
     first.save(output_file, save_all=True, append_images=rest, resolution=300.0)
@@ -120,6 +71,92 @@ def save_pdf_file(images: List[bytes], output_file: str) -> str:
         image.close()
 
     return output_file
+
+
+def parse_renderer_output(stdout_text: str) -> List[str]:
+    if not stdout_text.strip():
+        raise RuntimeError("El renderer local no devolvio salida.")
+
+    payload = None
+    for raw_line in reversed(stdout_text.splitlines()):
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+            break
+        except json.JSONDecodeError:
+            continue
+
+    if not isinstance(payload, dict):
+        raise RuntimeError("No se pudo interpretar la salida del renderer local.")
+
+    files = payload.get("files")
+    if not isinstance(files, list) or not files:
+        raise RuntimeError("El renderer local no genero imagenes.")
+
+    normalized = [str(Path(file_path)) for file_path in files]
+    return normalized
+
+
+def run_local_renderer(
+    input_file: str,
+    width_in: float,
+    height_in: float,
+    dpmm: int,
+    output_dir: str,
+    prefix: str,
+) -> List[str]:
+    if not LOCAL_RENDERER_SCRIPT.is_file():
+        raise RuntimeError(
+            "No se encontro el renderer local. Falta el archivo renderer/render_zpl_local.mjs."
+        )
+
+    width_mm = width_in * 25.4
+    height_mm = height_in * 25.4
+
+    command = [
+        "node",
+        str(LOCAL_RENDERER_SCRIPT),
+        "--input",
+        input_file,
+        "--output-dir",
+        output_dir,
+        "--prefix",
+        prefix,
+        "--width-mm",
+        f"{width_mm:.2f}",
+        "--height-mm",
+        f"{height_mm:.2f}",
+        "--dpmm",
+        str(dpmm),
+    ]
+
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "Node.js no esta instalado o no esta en PATH. Instala Node.js 20+."
+        ) from exc
+
+    if completed.returncode != 0:
+        details = (completed.stderr or completed.stdout or "").strip()
+        if len(details) > 500:
+            details = details[:500] + "..."
+        raise RuntimeError(
+            "Fallo el renderer local.\n"
+            "Asegurate de ejecutar 'npm install' dentro de la carpeta 'renderer'.\n"
+            f"Detalle: {details or 'sin detalle'}"
+        )
+
+    files = parse_renderer_output(completed.stdout)
+    return files
 
 
 class ConversionWorker(QObject):
@@ -133,32 +170,41 @@ class ConversionWorker(QObject):
 
     def run(self) -> None:
         try:
+            self.progress.emit(10, "Validando archivo ZPL")
             with open(self.config.file_path, "r", encoding="utf-8", errors="replace") as f:
-                zpl_text = f.read()
+                zpl_text = f.read().strip()
 
-            labels = parse_zpl_labels(zpl_text)
-            if not labels:
-                raise ValueError("El archivo no contiene datos ZPL validos.")
+            if not zpl_text:
+                raise ValueError("El archivo esta vacio.")
 
-            images = []
-            total = len(labels)
-            for idx, label in enumerate(labels, start=1):
-                progress = int((idx / total) * 80)
-                self.progress.emit(progress, f"Renderizando etiqueta {idx}/{total}")
-                image = render_label_png(
-                    zpl=label,
+            self.progress.emit(20, "Renderizando etiquetas en motor local")
+            if self.config.output_format == "png":
+                output_dir = self.config.output_path
+                os.makedirs(output_dir, exist_ok=True)
+                rendered_files = run_local_renderer(
+                    input_file=self.config.file_path,
                     width_in=self.config.width_in,
                     height_in=self.config.height_in,
                     dpmm=self.config.dpmm,
+                    output_dir=output_dir,
+                    prefix=self.config.png_prefix,
                 )
-                images.append(image)
-
-            self.progress.emit(90, "Generando salida")
-            if self.config.output_format == "png":
-                saved = save_png_files(images, self.config.output_path, self.config.png_prefix)
-                message = f"Exportacion completada. Se generaron {len(saved)} PNG en:\n{self.config.output_path}"
+                message = (
+                    f"Exportacion completada. Se generaron {len(rendered_files)} PNG en:\n"
+                    f"{output_dir}"
+                )
             else:
-                pdf_path = save_pdf_file(images, self.config.output_path)
+                with tempfile.TemporaryDirectory(prefix="zpl_local_render_") as temp_dir:
+                    rendered_files = run_local_renderer(
+                        input_file=self.config.file_path,
+                        width_in=self.config.width_in,
+                        height_in=self.config.height_in,
+                        dpmm=self.config.dpmm,
+                        output_dir=temp_dir,
+                        prefix="label",
+                    )
+                    self.progress.emit(85, "Generando PDF")
+                    pdf_path = save_pdf_file(rendered_files, self.config.output_path)
                 message = f"Exportacion completada. PDF guardado en:\n{pdf_path}"
 
             self.progress.emit(100, "Completado")
@@ -250,7 +296,7 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(options_group)
 
         self.status_label = QLabel(
-            "Nota: el renderizado usa la API de Labelary, por lo que necesitas internet para convertir."
+            "Motor local activado (sin API). Requiere Node.js y 'npm install' en carpeta renderer."
         )
         root_layout.addWidget(self.status_label)
 

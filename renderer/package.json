@@ -1,0 +1,13 @@
+{
+  "name": "zpl-local-renderer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Renderer local de ZPL a PNG usando zpl-renderer-js",
+  "scripts": {
+    "render": "node render_zpl_local.mjs"
+  },
+  "dependencies": {
+    "zpl-renderer-js": "^1.2.0"
+  }
+}
