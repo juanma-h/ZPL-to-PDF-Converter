@@ -33,7 +33,7 @@ pip install -r requirements.txt
 python src/main.py
 ```
 
-## Empaquetar para Windows (ejemplo)
+## Empaquetar para Windows 
 
 Puedes generar un `.exe` con `PyInstaller`:
 
@@ -44,7 +44,7 @@ pyinstaller --noconfirm --onefile --windowed --name ZPLConverter src/main.py
 
 El ejecutable quedara en `dist/ZPLConverter.exe`.
 
-## Empaquetar para macOS M1 (siguiente fase)
+## Empaquetar para macOS M1 
 
 - Recomendado construir en una Mac Apple Silicon para generar `.app` nativa
 - Usar `pyinstaller` o `briefcase` en ese entorno
