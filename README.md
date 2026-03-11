@@ -49,6 +49,23 @@ python src/main.py
 3. El renderer genera PNG locales (sin red).
 4. Si elegiste PDF, la app une los PNG en un unico PDF.
 
+## Mejorar nitidez de letras y numeros
+
+Si notas texto pixelado:
+
+- Usa `Resolucion (dpmm)` entre `12` y `24` (300-600 DPI aprox).
+- Usa `Calidad de render` en `Alta (2x recomendada)` o `Ultra (3x, mayor peso)`.
+- Para etiquetas muy pequenas, prueba aumentar tambien el tamano de fuente en el ZPL si el diseno original usa fuentes muy compactas.
+
+## Exportacion multicanal (etiquetas lado a lado)
+
+Para rollos anchos donde las etiquetas van en paralelo:
+
+- Ajusta `Canales por fila` a `2`, `3`, etc.
+- La app agrupa las etiquetas en horizontal (lado a lado) en cada salida.
+- En PDF, cada pagina representa una fila multicanal.
+- En PNG, cada archivo generado representa una fila multicanal.
+
 ## Empaquetar para Windows (ejemplo)
 
 ```bash

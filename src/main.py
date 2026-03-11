@@ -40,6 +40,8 @@ class ConversionConfig:
     width_in: float
     height_in: float
     dpmm: int
+    quality_scale: int
+    channels_per_row: int
     output_format: str
     output_path: str
     png_prefix: str
@@ -51,7 +53,7 @@ def ensure_pdf_extension(output_file: str) -> str:
     return output_file + ".pdf"
 
 
-def save_pdf_file(image_paths: Sequence[str], output_file: str) -> str:
+def save_pdf_file(image_paths: Sequence[str], output_file: str, dpi: float) -> str:
     output_file = ensure_pdf_extension(output_file)
 
     pil_images = []
@@ -65,12 +67,65 @@ def save_pdf_file(image_paths: Sequence[str], output_file: str) -> str:
         raise ValueError("No se encontraron imagenes para crear el PDF.")
 
     first, *rest = pil_images
-    first.save(output_file, save_all=True, append_images=rest, resolution=300.0)
+    first.save(output_file, save_all=True, append_images=rest, resolution=dpi)
 
     for image in pil_images:
         image.close()
 
     return output_file
+
+
+def apply_png_dpi_metadata(image_paths: Sequence[str], dpi: float) -> None:
+    dpi_pair = (dpi, dpi)
+    for image_path in image_paths:
+        with Image.open(image_path) as image:
+            image.save(image_path, dpi=dpi_pair)
+
+
+def compose_labels_side_by_side(
+    image_paths: Sequence[str],
+    output_dir: str,
+    output_prefix: str,
+    channels_per_row: int,
+) -> List[str]:
+    if channels_per_row <= 1:
+        return [str(Path(p)) for p in image_paths]
+
+    arranged_files: List[str] = []
+    os.makedirs(output_dir, exist_ok=True)
+
+    total_labels = len(image_paths)
+    row_index = 0
+    for start in range(0, total_labels, channels_per_row):
+        row_index += 1
+        row_paths = image_paths[start : start + channels_per_row]
+
+        row_images = []
+        max_width = 0
+        max_height = 0
+        for row_path in row_paths:
+            with Image.open(row_path) as image:
+                rgb = image.convert("RGB")
+                row_images.append(rgb)
+                max_width = max(max_width, rgb.width)
+                max_height = max(max_height, rgb.height)
+
+        canvas_width = max_width * channels_per_row
+        canvas = Image.new("RGB", (canvas_width, max_height), "white")
+
+        for col, image in enumerate(row_images):
+            x = col * max_width + (max_width - image.width) // 2
+            y = (max_height - image.height) // 2
+            canvas.paste(image, (x, y))
+            image.close()
+
+        file_name = f"{output_prefix}_fila_{row_index:04d}.png"
+        output_path = str(Path(output_dir) / file_name)
+        canvas.save(output_path, format="PNG")
+        canvas.close()
+        arranged_files.append(output_path)
+
+    return arranged_files
 
 
 def parse_renderer_output(stdout_text: str) -> List[str]:
@@ -178,34 +233,87 @@ class ConversionWorker(QObject):
                 raise ValueError("El archivo esta vacio.")
 
             self.progress.emit(20, "Renderizando etiquetas en motor local")
+            effective_dpmm = self.config.dpmm * self.config.quality_scale
+            effective_dpi = effective_dpmm * 25.4
+
             if self.config.output_format == "png":
                 output_dir = self.config.output_path
                 os.makedirs(output_dir, exist_ok=True)
-                rendered_files = run_local_renderer(
-                    input_file=self.config.file_path,
-                    width_in=self.config.width_in,
-                    height_in=self.config.height_in,
-                    dpmm=self.config.dpmm,
-                    output_dir=output_dir,
-                    prefix=self.config.png_prefix,
-                )
-                message = (
-                    f"Exportacion completada. Se generaron {len(rendered_files)} PNG en:\n"
-                    f"{output_dir}"
-                )
+                if self.config.channels_per_row <= 1:
+                    rendered_files = run_local_renderer(
+                        input_file=self.config.file_path,
+                        width_in=self.config.width_in,
+                        height_in=self.config.height_in,
+                        dpmm=effective_dpmm,
+                        output_dir=output_dir,
+                        prefix=self.config.png_prefix,
+                    )
+                    final_files = rendered_files
+                else:
+                    with tempfile.TemporaryDirectory(prefix="zpl_local_render_channels_") as temp_dir:
+                        rendered_files = run_local_renderer(
+                            input_file=self.config.file_path,
+                            width_in=self.config.width_in,
+                            height_in=self.config.height_in,
+                            dpmm=effective_dpmm,
+                            output_dir=temp_dir,
+                            prefix="label",
+                        )
+                        self.progress.emit(70, "Armando etiquetas multicanal")
+                        final_files = compose_labels_side_by_side(
+                            image_paths=rendered_files,
+                            output_dir=output_dir,
+                            output_prefix=self.config.png_prefix,
+                            channels_per_row=self.config.channels_per_row,
+                        )
+                self.progress.emit(85, "Ajustando metadatos de imagen")
+                apply_png_dpi_metadata(final_files, dpi=effective_dpi)
+                if self.config.channels_per_row <= 1:
+                    message = (
+                        f"Exportacion completada. Se generaron {len(final_files)} PNG en:\n"
+                        f"{output_dir}"
+                    )
+                else:
+                    message = (
+                        "Exportacion multicanal completada. "
+                        f"Se distribuyeron {len(rendered_files)} etiquetas en {len(final_files)} PNG "
+                        f"({self.config.channels_per_row} canales por fila) en:\n{output_dir}"
+                    )
             else:
                 with tempfile.TemporaryDirectory(prefix="zpl_local_render_") as temp_dir:
                     rendered_files = run_local_renderer(
                         input_file=self.config.file_path,
                         width_in=self.config.width_in,
                         height_in=self.config.height_in,
-                        dpmm=self.config.dpmm,
+                        dpmm=effective_dpmm,
                         output_dir=temp_dir,
                         prefix="label",
                     )
+                    if self.config.channels_per_row > 1:
+                        self.progress.emit(70, "Armando etiquetas multicanal")
+                        pdf_source_files = compose_labels_side_by_side(
+                            image_paths=rendered_files,
+                            output_dir=temp_dir,
+                            output_prefix="canales",
+                            channels_per_row=self.config.channels_per_row,
+                        )
+                    else:
+                        pdf_source_files = rendered_files
                     self.progress.emit(85, "Generando PDF")
-                    pdf_path = save_pdf_file(rendered_files, self.config.output_path)
-                message = f"Exportacion completada. PDF guardado en:\n{pdf_path}"
+                    pdf_path = save_pdf_file(
+                        pdf_source_files,
+                        self.config.output_path,
+                        dpi=effective_dpi,
+                    )
+                if self.config.channels_per_row <= 1:
+                    message = f"Exportacion completada. PDF guardado en:\n{pdf_path}"
+                else:
+                    message = (
+                        "Exportacion multicanal completada. "
+                        f"Se distribuyeron {len(rendered_files)} etiquetas en "
+                        f"{len(pdf_source_files)} paginas ({self.config.channels_per_row} canales por fila).\n"
+                        f"PDF guardado en:\n{pdf_path}"
+                    )
 
             self.progress.emit(100, "Completado")
             self.finished.emit(message)
@@ -214,6 +322,12 @@ class ConversionWorker(QObject):
 
 
 class MainWindow(QMainWindow):
+    QUALITY_SCALES = {
+        "Normal (1x)": 1,
+        "Alta (2x recomendada)": 2,
+        "Ultra (3x, mayor peso)": 3,
+    }
+
     PRESET_SIZES = {
         "4 x 6 in (envios)": (4.0, 6.0),
         "4 x 3 in": (4.0, 3.0),
@@ -273,10 +387,21 @@ class MainWindow(QMainWindow):
         options_form.addRow("Etiqueta:", size_row)
 
         self.dpmm_input = QSpinBox()
-        self.dpmm_input.setRange(6, 24)
+        self.dpmm_input.setRange(6, 48)
         self.dpmm_input.setSingleStep(1)
-        self.dpmm_input.setValue(8)
+        self.dpmm_input.setValue(12)
         options_form.addRow("Resolucion (dpmm):", self.dpmm_input)
+
+        self.quality_input = QComboBox()
+        self.quality_input.addItems(self.QUALITY_SCALES.keys())
+        self.quality_input.setCurrentText("Alta (2x recomendada)")
+        options_form.addRow("Calidad de render:", self.quality_input)
+
+        self.channels_input = QSpinBox()
+        self.channels_input.setRange(1, 6)
+        self.channels_input.setSingleStep(1)
+        self.channels_input.setValue(1)
+        options_form.addRow("Canales por fila:", self.channels_input)
 
         self.format_input = QComboBox()
         self.format_input.addItems(["pdf", "png"])
@@ -296,7 +421,7 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(options_group)
 
         self.status_label = QLabel(
-            "Motor local activado (sin API). Requiere Node.js y 'npm install' en carpeta renderer."
+            "Motor local activado (sin API). Usa Canales por fila > 1 para etiquetas lado a lado."
         )
         root_layout.addWidget(self.status_label)
 
@@ -359,6 +484,8 @@ class MainWindow(QMainWindow):
         output_path = self.output_input.text().strip()
         output_format = self.format_input.currentText()
         png_prefix = self.png_prefix_input.text().strip() or "etiqueta"
+        quality_scale = self.QUALITY_SCALES[self.quality_input.currentText()]
+        channels_per_row = self.channels_input.value()
 
         if not file_path or not os.path.isfile(file_path):
             QMessageBox.warning(self, "Falta archivo", "Selecciona un archivo .txt valido.")
@@ -382,6 +509,8 @@ class MainWindow(QMainWindow):
             width_in=width_in,
             height_in=height_in,
             dpmm=self.dpmm_input.value(),
+            quality_scale=quality_scale,
+            channels_per_row=channels_per_row,
             output_format=output_format,
             output_path=output_path,
             png_prefix=png_prefix,
