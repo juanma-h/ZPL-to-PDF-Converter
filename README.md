@@ -15,7 +15,7 @@ La conversion es **100% local**, sin depender de Labelary ni de internet.
 
 ## Requisitos
 
-- Python 3.11+ (recomendado)
+- Python 3.11 a 3.14 (recomendado: 3.11 o 3.12)
 - Node.js 20+ (recomendado)
 
 ## Instalacion
@@ -66,7 +66,105 @@ Para rollos anchos donde las etiquetas van en paralelo:
 - En PDF, cada pagina representa una fila multicanal.
 - En PNG, cada archivo generado representa una fila multicanal.
 
-## Empaquetar para Windows (ejemplo)
+
+## Troubleshooting de empaquetado (macOS)
+
+Si ves errores como:
+
+- `No matching distribution found for PySide6==6.8.1`
+- conflictos de versiones con Python 3.14
+
+haz lo siguiente:
+
+1. Asegura un entorno virtual limpio.
+2. Actualiza `pip` dentro del venv.
+3. Reinstala dependencias desde `requirements.txt` (ahora con rangos compatibles).
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Luego vuelve a ejecutar el build de macOS Intel:
+
+```bash
+./scripts/build_macos.sh x86_64 dist/macos-intel
+```
+
+
+### Error: `npm: command not found` en macOS
+
+Ese error indica que no tienes Node.js/npm instalado en tu Mac (o no esta en PATH).
+
+Instalacion recomendada (Homebrew):
+
+```bash
+brew install node@20
+echo 'export PATH="/opt/homebrew/opt/node@20/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+node -v
+npm -v
+```
+
+Luego reintenta:
+
+```bash
+./scripts/build_macos.sh x86_64 dist/macos-intel
+```
+
+### Error: `script ... pyinstaller/src/main.py not found`
+
+Ese error ocurria por una resolucion relativa del `.spec`.
+La configuracion actual ya usa rutas absolutas basadas en la ubicacion real del archivo `pyinstaller/main.spec`.
+
+Si te aparece despues de actualizar, limpia caches y reintenta:
+
+```bash
+rm -rf build dist
+./scripts/build_macos.sh x86_64 dist/macos-intel
+```
+
+Los scripts actuales ya redirigen los caches de `pip` y PyInstaller a `build/`, para evitar problemas de permisos sobre `~/Library/...`.
+
+## Estructura recomendada del repositorio
+
+```text
+.
+├── src/                      # App principal (Python + PySide6)
+├── renderer/                 # Renderizador local de ZPL con Node
+├── pyinstaller/              # Spec y configuracion de empaquetado
+├── scripts/                  # Scripts de build por plataforma
+├── .github/workflows/        # CI para builds multiplataforma
+└── docs/                     # Documentacion adicional
+```
+
+## Build multiplataforma (una sola base de codigo)
+
+### Windows x64
+
+```powershell
+./scripts/build_windows.ps1
+```
+
+### macOS Intel
+
+```bash
+./scripts/build_macos.sh x86_64 dist/macos-intel
+```
+
+### macOS Apple Silicon (M1+)
+
+```bash
+./scripts/build_macos.sh arm64 dist/macos-arm64
+```
+
+Nota tecnica: con PyInstaller + archivo `.spec`, la arquitectura se configura en el `.spec` (variable `PYINSTALLER_TARGET_ARCH`) y no por `--target-arch` en la linea de comandos.
+
+> Nota: Para detalle de CI/CD y pasos de distribucion en macOS (firma/notarizacion), revisa `docs/packaging.md`.
+
+## Empaquetar para Windows (ejemplo rapido)
 
 ```bash
 pip install pyinstaller

@@ -31,7 +31,20 @@ from PySide6.QtWidgets import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-LOCAL_RENDERER_SCRIPT = PROJECT_ROOT / "renderer" / "render_zpl_local.mjs"
+
+
+def runtime_base_path() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    return PROJECT_ROOT
+
+
+def local_renderer_script_path() -> Path:
+    return runtime_base_path() / "renderer" / "render_zpl_local.mjs"
+
+
+def runtime_working_directory() -> Path:
+    return runtime_base_path()
 
 
 @dataclass
@@ -162,9 +175,12 @@ def run_local_renderer(
     output_dir: str,
     prefix: str,
 ) -> List[str]:
-    if not LOCAL_RENDERER_SCRIPT.is_file():
+    renderer_script = local_renderer_script_path()
+
+    if not renderer_script.is_file():
         raise RuntimeError(
-            "No se encontro el renderer local. Falta el archivo renderer/render_zpl_local.mjs."
+            "No se encontro el renderer local. Falta el archivo renderer/render_zpl_local.mjs "
+            "en la distribucion o en el proyecto."
         )
 
     width_mm = width_in * 25.4
@@ -172,7 +188,7 @@ def run_local_renderer(
 
     command = [
         "node",
-        str(LOCAL_RENDERER_SCRIPT),
+        str(renderer_script),
         "--input",
         input_file,
         "--output-dir",
@@ -190,7 +206,7 @@ def run_local_renderer(
     try:
         completed = subprocess.run(
             command,
-            cwd=str(PROJECT_ROOT),
+            cwd=str(runtime_working_directory()),
             capture_output=True,
             text=True,
             check=False,
