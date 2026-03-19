@@ -51,21 +51,36 @@ collect_node_dependencies() {
   local source_bin="$1"
   local output_file="$2"
 
-  python3 scripts/collect_macos_node_deps.py "$source_bin" "$output_file"
+  python3 - <<'PY' "$source_bin" "$output_file"
+from __future__ import annotations
+import pathlib
+import subprocess
+import sys
+
+source = pathlib.Path(sys.argv[1]).resolve()
+output = pathlib.Path(sys.argv[2])
+visited: set[pathlib.Path] = set()
+        if not dep.exists() or dep in visited:
+            continue
+
+        results.append(dep)
+        stack.append(dep)
+
+output.write_text('\n'.join(str(path) for path in results) + ('\n' if results else ''))
+PY
 }
 
 embed_node_runtime() {
   local source_bin="$1"
   local tmp_list="build/node-runtime-libs.txt"
 
-  mkdir -p "${RUNTIME_DIR}"
-  chmod -R u+w "${RUNTIME_DIR}" 2>/dev/null || true
   rm -f "${RUNTIME_BIN}"
   rm -rf "${RUNTIME_LIB_DIR}"
   mkdir -p "${RUNTIME_LIB_DIR}"
 
   echo "[preflight] Embedding Node runtime from ${source_bin}"
-  install -m 0755 "${source_bin}" "${RUNTIME_BIN}"
+  cp "${source_bin}" "${RUNTIME_BIN}"
+  chmod +x "${RUNTIME_BIN}"
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
     echo "[preflight] Non-macOS host detected; only the Node binary will be embedded"
@@ -85,9 +100,7 @@ embed_node_runtime() {
 
   while IFS= read -r dylib_path; do
     [[ -n "${dylib_path}" ]] || continue
-    target_path="${RUNTIME_LIB_DIR}/$(basename "${dylib_path}")"
-    rm -f "${target_path}"
-    install -m 0644 "${dylib_path}" "${target_path}"
+    cp "${dylib_path}" "${RUNTIME_LIB_DIR}/$(basename "${dylib_path}")"
   done < "${tmp_list}"
 
   echo "[preflight] Embedded dylibs:"
