@@ -6,3 +6,6 @@ build/
 *.spec
 !pyinstaller/main.spec
 renderer/node_modules/
+renderer/runtime/node
+renderer/runtime/node.exe
+renderer/runtime/lib/

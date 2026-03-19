@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -41,6 +42,49 @@ def runtime_base_path() -> Path:
 
 def local_renderer_script_path() -> Path:
     return runtime_base_path() / "renderer" / "render_zpl_local.mjs"
+
+
+def bundled_node_runtime_dir() -> Path:
+    return runtime_base_path() / "renderer" / "runtime"
+
+
+def bundled_node_binary_path() -> Path:
+    suffix = ".exe" if os.name == "nt" else ""
+    return bundled_node_runtime_dir() / f"node{suffix}"
+
+
+def bundled_node_lib_dir() -> Path:
+    return bundled_node_runtime_dir() / "lib"
+
+
+def resolve_node_command() -> str:
+    bundled_node = bundled_node_binary_path()
+    if bundled_node.is_file():
+        return str(bundled_node)
+
+    system_node = shutil.which("node")
+    if system_node:
+        return system_node
+
+    raise RuntimeError(
+        "No se encontro Node.js. La app requiere un runtime de Node embebido "
+        "o una instalacion de Node.js 20+ disponible en PATH."
+    )
+
+
+def build_renderer_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    bundled_node = bundled_node_binary_path()
+    bundled_lib_dir = bundled_node_lib_dir()
+
+    if bundled_node.is_file() and bundled_lib_dir.is_dir():
+        current_value = env.get("DYLD_LIBRARY_PATH", "")
+        lib_entries = [str(bundled_lib_dir)]
+        if current_value:
+            lib_entries.append(current_value)
+        env["DYLD_LIBRARY_PATH"] = os.pathsep.join(lib_entries)
+
+    return env
 
 
 def runtime_working_directory() -> Path:
@@ -186,8 +230,10 @@ def run_local_renderer(
     width_mm = width_in * 25.4
     height_mm = height_in * 25.4
 
+    node_command = resolve_node_command()
+
     command = [
-        "node",
+        node_command,
         str(renderer_script),
         "--input",
         input_file,
@@ -210,10 +256,12 @@ def run_local_renderer(
             capture_output=True,
             text=True,
             check=False,
+            env=build_renderer_environment(),
         )
     except FileNotFoundError as exc:
         raise RuntimeError(
-            "Node.js no esta instalado o no esta en PATH. Instala Node.js 20+."
+            "No se pudo ejecutar el runtime de Node. Verifica que el build incluya "
+            "renderer/runtime/node y sus librerias o instala Node.js 20+."
         ) from exc
 
     if completed.returncode != 0:

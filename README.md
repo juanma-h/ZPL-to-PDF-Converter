@@ -45,7 +45,7 @@ python src/main.py
 ## Como funciona la conversion local
 
 1. La app lee el `.txt` con ZPL.
-2. Ejecuta `renderer/render_zpl_local.mjs` con `node`.
+2. Ejecuta `renderer/render_zpl_local.mjs` con un runtime de Node embebido en `renderer/runtime/node` cuando el build de macOS lo incluye; si no, usa `node` desde PATH.
 3. El renderer genera PNG locales (sin red).
 4. Si elegiste PDF, la app une los PNG en un unico PDF.
 
@@ -93,12 +93,31 @@ Luego vuelve a ejecutar el build de macOS Intel:
 ./scripts/build_macos.sh x86_64 dist/macos-intel
 ```
 
+Salida esperada:
+
+- app: `dist/macos-intel/ZPLConverter.app`
+- dmg: `dist/macos-intel/ZPLConverter-x86_64.dmg`
+
+Ese script ahora tambien intenta generar un `.dmg` instalable (`dist/macos-intel/ZPLConverter-x86_64.dmg`) si detecta `hdiutil`, y al empaquetar en macOS intenta incluir `renderer/runtime/node` junto con las librerias dinamicas que `node` necesite.
+
 
 ### Error: `npm: command not found` en macOS
 
 Ese error indica que no tienes Node.js/npm instalado en tu Mac (o no esta en PATH).
 
 Instalacion recomendada (Homebrew):
+
+**Intel Mac**
+
+```bash
+brew install node@20
+echo 'export PATH="/usr/local/opt/node@20/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+node -v
+npm -v
+```
+
+**Apple Silicon (M1+)**
 
 ```bash
 brew install node@20
@@ -113,6 +132,11 @@ Luego reintenta:
 ```bash
 ./scripts/build_macos.sh x86_64 dist/macos-intel
 ```
+
+Salida esperada:
+
+- app: `dist/macos-intel/ZPLConverter.app`
+- dmg: `dist/macos-intel/ZPLConverter-x86_64.dmg`
 
 ### Error: `script ... pyinstaller/src/main.py not found`
 
@@ -154,15 +178,25 @@ Los scripts actuales ya redirigen los caches de `pip` y PyInstaller a `build/`, 
 ./scripts/build_macos.sh x86_64 dist/macos-intel
 ```
 
+Salida esperada:
+
+- app: `dist/macos-intel/ZPLConverter.app`
+- dmg: `dist/macos-intel/ZPLConverter-x86_64.dmg`
+
 ### macOS Apple Silicon (M1+)
 
 ```bash
 ./scripts/build_macos.sh arm64 dist/macos-arm64
 ```
 
+Salida esperada:
+
+- app: `dist/macos-arm64/ZPLConverter.app`
+- dmg: `dist/macos-arm64/ZPLConverter-arm64.dmg`
+
 Nota tecnica: con PyInstaller + archivo `.spec`, la arquitectura se configura en el `.spec` (variable `PYINSTALLER_TARGET_ARCH`) y no por `--target-arch` en la linea de comandos.
 
-> Nota: Para detalle de CI/CD y pasos de distribucion en macOS (firma/notarizacion), revisa `docs/packaging.md`.
+> Nota: Para detalle de CI/CD, runtime embebido de Node y pasos de distribucion en macOS (firma/notarizacion), revisa `docs/packaging.md`.
 
 ## Empaquetar para Windows (ejemplo rapido)
 
