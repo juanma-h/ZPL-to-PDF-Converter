@@ -100,8 +100,6 @@ Salida esperada:
 
 Ese script ahora tambien intenta generar un `.dmg` instalable (`dist/macos-intel/ZPLConverter-x86_64.dmg`) si detecta `hdiutil`, y al empaquetar en macOS intenta incluir `renderer/runtime/node` junto con las librerias dinamicas que `node` necesite.
 
-Si el embedding de Node falla en tu Mac, el script ahora puede continuar usando `node` desde PATH; para forzar fallo duro usa `STRICT_EMBED_NODE_RUNTIME=1`, y para omitir por completo el embedding usa `EMBED_NODE_RUNTIME=0`.
-
 
 ### Error: `npm: command not found` en macOS
 
