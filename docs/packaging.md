@@ -25,11 +25,11 @@ Este repositorio soporta una sola base de codigo para tres distribuciones:
 
 ## Requisito clave de runtime
 
-La app requiere un runtime de Node.js disponible en PATH en la maquina donde se ejecuta.
+La app intenta usar primero un runtime de Node.js embebido dentro de `renderer/runtime/node` (incluido en el bundle de PyInstaller durante el build de macOS). Si no existe, usa `node` desde PATH.
 
 Tambien requiere un entorno Python con dependencias compatibles (PySide6 y Pillow se definen por rango en `requirements.txt`).
 
-> Alternativa futura: empaquetar Node embebido por plataforma para no depender de una instalacion global.
+> Recomendacion: para distribucion a usuarios finales en macOS, usa siempre el runtime embebido y evita depender de una instalacion global de Node.
 
 
 ## Problema comun: fallo con Python 3.14 y PySide6
@@ -55,6 +55,11 @@ pip install -r requirements.txt
 ./scripts/build_macos.sh x86_64 dist/macos-intel
 ```
 
+Resultado esperado en Intel:
+
+- `dist/macos-intel/ZPLConverter.app`
+- `dist/macos-intel/ZPLConverter-x86_64.dmg`
+
 ## Builds locales
 
 ### Windows
@@ -71,7 +76,10 @@ Salida esperada: `dist/windows/ZPLConverter/`
 ./scripts/build_macos.sh x86_64 dist/macos-intel
 ```
 
-Salida esperada: `dist/macos-intel/ZPLConverter/`
+Salida esperada:
+
+- `dist/macos-intel/ZPLConverter.app`
+- `dist/macos-intel/ZPLConverter-x86_64.dmg`
 
 ### macOS Apple Silicon
 
@@ -79,7 +87,10 @@ Salida esperada: `dist/macos-intel/ZPLConverter/`
 ./scripts/build_macos.sh arm64 dist/macos-arm64
 ```
 
-Salida esperada: `dist/macos-arm64/ZPLConverter/`
+Salida esperada:
+
+- `dist/macos-arm64/ZPLConverter.app`
+- `dist/macos-arm64/ZPLConverter-arm64.dmg`
 
 ## CI/CD
 
@@ -100,3 +111,17 @@ Para distribuir fuera de desarrollo, agrega en una fase posterior:
 3. Staple del ticket (`xcrun stapler`).
 
 Esto depende de certificados de Apple Developer y secretos en GitHub Actions.
+
+## Notas sobre el runtime embebido de Node
+
+El script `scripts/build_macos.sh` copia el binario real de `node` detectado en PATH hacia `renderer/runtime/node` antes de ejecutar PyInstaller. En macOS, ademas inspecciona las dependencias dinamicas de `node` con `otool -L` y copia las `.dylib` no pertenecientes al sistema dentro de `renderer/runtime/lib`. Como `pyinstaller/main.spec` empaqueta toda la carpeta `renderer`, el bundle final incluye ese runtime junto al renderer local.
+
+En runtime, la app prepara `DYLD_LIBRARY_PATH` apuntando a `renderer/runtime/lib` cuando usa el Node embebido. Esto hace el bundle mas robusto que copiar solo el ejecutable de `node`, especialmente en instalaciones basadas en Homebrew.
+
+Si necesitas omitir el runtime embebido, omitir el DMG o forzar que el build falle si no se pudo embeber Node, ejecuta una de estas variantes:
+
+```bash
+EMBED_NODE_RUNTIME=0 ./scripts/build_macos.sh x86_64 dist/macos-intel
+CREATE_DMG=0 ./scripts/build_macos.sh x86_64 dist/macos-intel
+STRICT_EMBED_NODE_RUNTIME=1 ./scripts/build_macos.sh x86_64 dist/macos-intel
+```
