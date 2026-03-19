@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+import sys
 from pathlib import Path
 
 spec_dir = Path(SPECPATH).resolve()
@@ -50,3 +51,10 @@ coll = COLLECT(
     upx_exclude=[],
     name='ZPLConverter',
 )
+
+if sys.platform == "darwin":
+    app = BUNDLE(
+        coll,
+        name='ZPLConverter.app',
+        bundle_identifier='com.zplconverter.app',
+    )

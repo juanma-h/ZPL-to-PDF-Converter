@@ -5,7 +5,9 @@ ARCH="${1:-native}"
 DIST_DIR="${2:-dist/macos-${ARCH}}"
 CREATE_DMG="${CREATE_DMG:-1}"
 EMBED_NODE_RUNTIME="${EMBED_NODE_RUNTIME:-1}"
+STRICT_EMBED_NODE_RUNTIME="${STRICT_EMBED_NODE_RUNTIME:-0}"
 APP_NAME="ZPLConverter"
+SCRIPT_REVISION="2026-03-19-runtime-fallback"
 DMG_NAME="${APP_NAME}-${ARCH}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,46 +43,33 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 NODE_BIN="$(command -v node)"
-NODE_REALPATH="$(python3 - <<'PY' "$NODE_BIN"
-import os, sys
-print(os.path.realpath(sys.argv[1]))
-PY
-)"
+NODE_REALPATH="$(python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$NODE_BIN")"
 
 collect_node_dependencies() {
   local source_bin="$1"
   local output_file="$2"
+  local helper_script="scripts/collect_macos_node_deps.py"
 
-  python3 - <<'PY' "$source_bin" "$output_file"
-from __future__ import annotations
-import pathlib
-import subprocess
-import sys
+  if [[ ! -f "${helper_script}" ]]; then
+    echo "[ERROR] No se encontro ${helper_script}"
+    return 1
+  fi
 
-source = pathlib.Path(sys.argv[1]).resolve()
-output = pathlib.Path(sys.argv[2])
-visited: set[pathlib.Path] = set()
-        if not dep.exists() or dep in visited:
-            continue
-
-        results.append(dep)
-        stack.append(dep)
-
-output.write_text('\n'.join(str(path) for path in results) + ('\n' if results else ''))
-PY
+  python3 "${helper_script}" "$source_bin" "$output_file"
 }
 
 embed_node_runtime() {
   local source_bin="$1"
   local tmp_list="build/node-runtime-libs.txt"
 
+  mkdir -p "${RUNTIME_DIR}"
+  chmod -R u+w "${RUNTIME_DIR}" 2>/dev/null || true
   rm -f "${RUNTIME_BIN}"
   rm -rf "${RUNTIME_LIB_DIR}"
   mkdir -p "${RUNTIME_LIB_DIR}"
 
   echo "[preflight] Embedding Node runtime from ${source_bin}"
-  cp "${source_bin}" "${RUNTIME_BIN}"
-  chmod +x "${RUNTIME_BIN}"
+  install -m 0755 "${source_bin}" "${RUNTIME_BIN}"
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
     echo "[preflight] Non-macOS host detected; only the Node binary will be embedded"
@@ -92,7 +81,11 @@ embed_node_runtime() {
     return
   fi
 
-  collect_node_dependencies "${source_bin}" "${tmp_list}"
+  if ! collect_node_dependencies "${source_bin}" "${tmp_list}"; then
+    echo "[WARN] No se pudieron recolectar las dependencias dylib de Node"
+    return 1
+  fi
+
   if [[ ! -s "${tmp_list}" ]]; then
     echo "[preflight] No external dylibs were detected for Node"
     return
@@ -100,7 +93,9 @@ embed_node_runtime() {
 
   while IFS= read -r dylib_path; do
     [[ -n "${dylib_path}" ]] || continue
-    cp "${dylib_path}" "${RUNTIME_LIB_DIR}/$(basename "${dylib_path}")"
+    target_path="${RUNTIME_LIB_DIR}/$(basename "${dylib_path}")"
+    rm -f "${target_path}"
+    install -m 0644 "${dylib_path}" "${target_path}"
   done < "${tmp_list}"
 
   echo "[preflight] Embedded dylibs:"
@@ -124,6 +119,7 @@ create_dmg() {
 
   if [[ ! -d "${app_bundle}" ]]; then
     echo "[ERROR] No se encontro ${app_bundle} para crear el DMG"
+    echo "[ERROR] El build de PyInstaller no produjo un bundle .app. Revisa pyinstaller/main.spec."
     exit 1
   fi
 
@@ -141,13 +137,22 @@ create_dmg() {
     "${dmg_path}"
 }
 
+echo "[preflight] script revision: ${SCRIPT_REVISION}"
 echo "[preflight] node: $(node -v)"
 echo "[preflight] npm:  $(npm -v)"
 echo "[preflight] architecture request: ${ARCH}"
 echo "[preflight] resolved node: ${NODE_REALPATH}"
 
 if [[ "${EMBED_NODE_RUNTIME}" == "1" ]]; then
-  embed_node_runtime "${NODE_REALPATH}"
+  if ! embed_node_runtime "${NODE_REALPATH}"; then
+    if [[ "${STRICT_EMBED_NODE_RUNTIME}" == "1" ]]; then
+      echo "[ERROR] Fallo el embedding del runtime de Node y STRICT_EMBED_NODE_RUNTIME=1"
+      exit 1
+    fi
+
+    echo "[WARN] Fallo el embedding del runtime de Node; se continuara usando Node externo desde PATH"
+    rm -rf "${RUNTIME_DIR}"
+  fi
 else
   echo "[preflight] Skipping embedded Node runtime (EMBED_NODE_RUNTIME=${EMBED_NODE_RUNTIME})"
 fi

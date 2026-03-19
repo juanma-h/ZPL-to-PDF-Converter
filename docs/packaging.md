@@ -118,9 +118,10 @@ El script `scripts/build_macos.sh` copia el binario real de `node` detectado en 
 
 En runtime, la app prepara `DYLD_LIBRARY_PATH` apuntando a `renderer/runtime/lib` cuando usa el Node embebido. Esto hace el bundle mas robusto que copiar solo el ejecutable de `node`, especialmente en instalaciones basadas en Homebrew.
 
-Si necesitas omitir el runtime embebido o el DMG durante pruebas locales, ejecuta una de estas variantes:
+Si necesitas omitir el runtime embebido, omitir el DMG o forzar que el build falle si no se pudo embeber Node, ejecuta una de estas variantes:
 
 ```bash
 EMBED_NODE_RUNTIME=0 ./scripts/build_macos.sh x86_64 dist/macos-intel
 CREATE_DMG=0 ./scripts/build_macos.sh x86_64 dist/macos-intel
+STRICT_EMBED_NODE_RUNTIME=1 ./scripts/build_macos.sh x86_64 dist/macos-intel
 ```
