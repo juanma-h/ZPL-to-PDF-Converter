@@ -60,44 +60,9 @@ import sys
 source = pathlib.Path(sys.argv[1]).resolve()
 output = pathlib.Path(sys.argv[2])
 visited: set[pathlib.Path] = set()
-discovered: set[pathlib.Path] = set()
-results: list[pathlib.Path] = []
-stack = [source]
-
-
-def is_system_library(path: str) -> bool:
-    return path.startswith('/usr/lib/') or path.startswith('/System/Library/')
-
-while stack:
-    current = stack.pop()
-    if current in visited or not current.exists():
-        continue
-    visited.add(current)
-
-    proc = subprocess.run(
-        ['otool', '-L', str(current)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.returncode != 0:
-        continue
-
-    for raw_line in proc.stdout.splitlines()[1:]:
-        line = raw_line.strip()
-        if not line:
-            continue
-        dep_text = line.split(' (compatibility version', 1)[0].strip()
-        if not dep_text.startswith('/'):
-            continue
-        if is_system_library(dep_text):
+        if not dep.exists() or dep in visited:
             continue
 
-        dep = pathlib.Path(dep_text)
-        if not dep.exists() or dep in visited or dep in discovered:
-            continue
-
-        discovered.add(dep)
         results.append(dep)
         stack.append(dep)
 
@@ -109,14 +74,13 @@ embed_node_runtime() {
   local source_bin="$1"
   local tmp_list="build/node-runtime-libs.txt"
 
-  mkdir -p "${RUNTIME_DIR}"
-  chmod -R u+w "${RUNTIME_DIR}" 2>/dev/null || true
   rm -f "${RUNTIME_BIN}"
   rm -rf "${RUNTIME_LIB_DIR}"
   mkdir -p "${RUNTIME_LIB_DIR}"
 
   echo "[preflight] Embedding Node runtime from ${source_bin}"
-  install -m 0755 "${source_bin}" "${RUNTIME_BIN}"
+  cp "${source_bin}" "${RUNTIME_BIN}"
+  chmod +x "${RUNTIME_BIN}"
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
     echo "[preflight] Non-macOS host detected; only the Node binary will be embedded"
@@ -136,9 +100,7 @@ embed_node_runtime() {
 
   while IFS= read -r dylib_path; do
     [[ -n "${dylib_path}" ]] || continue
-    target_path="${RUNTIME_LIB_DIR}/$(basename "${dylib_path}")"
-    rm -f "${target_path}"
-    install -m 0644 "${dylib_path}" "${target_path}"
+    cp "${dylib_path}" "${RUNTIME_LIB_DIR}/$(basename "${dylib_path}")"
   done < "${tmp_list}"
 
   echo "[preflight] Embedded dylibs:"
