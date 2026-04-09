@@ -6,6 +6,8 @@ DIST_DIR="${2:-dist/macos-${ARCH}}"
 CREATE_DMG="${CREATE_DMG:-1}"
 EMBED_NODE_RUNTIME="${EMBED_NODE_RUNTIME:-1}"
 STRICT_EMBED_NODE_RUNTIME="${STRICT_EMBED_NODE_RUNTIME:-0}"
+SKIP_PYTHON_DEPS_INSTALL="${SKIP_PYTHON_DEPS_INSTALL:-0}"
+SKIP_NPM_INSTALL="${SKIP_NPM_INSTALL:-0}"
 APP_NAME="ZPLConverter"
 SCRIPT_REVISION="2026-03-19-runtime-fallback"
 DMG_NAME="${APP_NAME}-${ARCH}"
@@ -157,15 +159,23 @@ else
   echo "[preflight] Skipping embedded Node runtime (EMBED_NODE_RUNTIME=${EMBED_NODE_RUNTIME})"
 fi
 
-echo "[1/5] Installing Python dependencies"
-python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt pyinstaller
+if [[ "${SKIP_PYTHON_DEPS_INSTALL}" == "1" ]]; then
+  echo "[1/5] Skipping Python dependency installation"
+else
+  echo "[1/5] Installing Python dependencies"
+  python3 -m pip install --upgrade pip
+  python3 -m pip install -r requirements.txt pyinstaller
+fi
 
-echo "[2/5] Installing renderer dependencies"
-(
-  cd renderer
-  npm ci
-)
+if [[ "${SKIP_NPM_INSTALL}" == "1" ]]; then
+  echo "[2/5] Skipping renderer dependency installation"
+else
+  echo "[2/5] Installing renderer dependencies"
+  (
+    cd renderer
+    npm ci
+  )
+fi
 
 echo "[3/5] Building app with PyInstaller"
 TARGET_ARCH_ENV=""

@@ -1,34 +1,81 @@
-# ZPL to PDF/PNG Converter (Local, sin API)
+# ZPL to PDF/PNG Converter
 
 Aplicacion de escritorio para convertir archivos ZPL (`.txt`) a:
 
 - un PDF con todas las etiquetas
-- multiples PNG (una imagen por etiqueta)
+- multiples PNG
+- composiciones multicanal por fila
 
-La conversion es 100% local, sin depender de Labelary ni de internet.
+La conversion es 100% local. No usa Labelary ni servicios externos.
 
-## Que hace
+## Mejoras de esta version
 
-- Convierte ZPL a PNG usando `zpl-renderer-js` de forma local
-- Une multiples etiquetas en un solo PDF con `Pillow`
-- Permite exportacion multicanal (`Canales por fila`) para etiquetas lado a lado
-- Mantiene el renderer dentro del proyecto para no depender de servicios externos
+- UI renovada con tarjetas, resumen en vivo y una estetica inspirada en macOS Tahoe
+- arquitectura modular en Python para separar UI, conversion, runtime y parsing
+- persistencia de preferencias y ultimas rutas con `QSettings`
+- soporte drag and drop para el archivo ZPL
+- deteccion previa de etiquetas y cantidades (`^PQ`) antes de convertir
+- build de Windows mejorado con `node.exe` embebido dentro del bundle
+- CI alineado con los scripts reales de build
+- pruebas unitarias para la logica desacoplada
 
 ## Stack
 
-- UI desktop: `PySide6` (Python)
-- Render local: `zpl-renderer-js` (Node.js + WebAssembly)
-- Union a PDF: `Pillow` (Python)
+- UI desktop: `PySide6`
+- renderer local: `zpl-renderer-js` sobre Node.js + WebAssembly
+- PDF e imagenes: `Pillow`
+- empaquetado: `PyInstaller`
 
-## Requisitos
+## Estructura del repo
 
-- Python 3.11 a 3.14
-- Recomendado: Python 3.11 o 3.12
-- Node.js 20+
+```text
+.
+|-- src/
+|   |-- main.py
+|   `-- zpl_converter/
+|       |-- app.py
+|       |-- conversion.py
+|       |-- image_ops.py
+|       |-- models.py
+|       |-- renderer.py
+|       |-- runtime.py
+|       |-- zpl_parser.py
+|       `-- ui/
+|-- renderer/
+|-- scripts/
+|-- pyinstaller/
+|-- tests/
+`-- docs/
+```
+
+## Como funciona
+
+1. La app analiza el `.txt` y estima cuantas etiquetas hay.
+2. Python llama a `renderer/render_zpl_local.mjs`.
+3. El runtime intenta usar primero `renderer/runtime/node(.exe)`.
+4. Si no existe runtime embebido, usa `node` desde PATH.
+5. El renderer produce PNG locales.
+6. La app puede:
+   - dejar los PNG tal cual
+   - agruparlos por canales
+   - unirlos en un PDF
 
 ## Desarrollo local
 
-Estas instrucciones son para ejecutar la app en modo desarrollo. Los scripts de build ya instalan dependencias por su cuenta.
+### Windows PowerShell
+
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+cd renderer
+npm ci
+cd ..
+
+python src/main.py
+```
 
 ### macOS / Linux
 
@@ -45,168 +92,134 @@ cd ..
 python src/main.py
 ```
 
-### Windows PowerShell
+## Pruebas
+
+Con el entorno virtual del proyecto activo:
 
 ```powershell
-python -m venv venv
-venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-
-cd renderer
-npm ci
-cd ..
-
-python src/main.py
+$env:PYTHONPATH = "src"
+.\venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-## Como funciona la conversion
+## Build de Windows
 
-1. La app lee el archivo `.txt` con ZPL.
-2. Ejecuta `renderer/render_zpl_local.mjs`.
-3. En macOS empaquetado, intenta usar un runtime de Node embebido en `renderer/runtime/node`.
-4. Si no existe runtime embebido, usa `node` desde PATH.
-5. El renderer genera PNG locales.
-6. Si eliges PDF, la app une los PNG en un unico archivo.
-
-## Calidad de salida
-
-Si notas texto pixelado:
-
-- Usa `Resolucion (dpmm)` entre `12` y `24` (300-600 DPI aprox.)
-- Usa `Calidad de render` en `Alta (2x recomendada)` o `Ultra (3x, mayor peso)`
-- Para etiquetas muy pequenas, revisa tambien el tamano de fuente en el ZPL original
-
-## Exportacion multicanal
-
-Para rollos anchos donde las etiquetas van en paralelo:
-
-- Ajusta `Canales por fila` a `2`, `3`, etc.
-- La app agrupa las etiquetas en horizontal dentro de cada salida
-- En PDF, cada pagina representa una fila multicanal
-- En PNG, cada archivo generado representa una fila multicanal
-
-## Builds
-
-### Windows x64
+### Build normal
 
 ```powershell
-./scripts/build_windows.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1
 ```
 
 Salida esperada:
 
 - `dist/windows/ZPLConverter/`
 
-### macOS Intel
+### Build usando el `venv` actual
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 `
+  -PythonExe .\venv\Scripts\python.exe `
+  -DistDir dist/windows
+```
+
+### Build rapido si ya tienes todo instalado
+
+```powershell
+$env:SKIP_PYTHON_DEPS_INSTALL = "1"
+$env:SKIP_NPM_INSTALL = "1"
+$env:STRICT_EMBED_NODE_RUNTIME = "1"
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 `
+  -PythonExe .\venv\Scripts\python.exe `
+  -DistDir dist/windows
+```
+
+### Que hace el script de Windows
+
+- instala dependencias de Python y renderer, salvo que uses `SKIP_*`
+- detecta `node.exe` en PATH
+- copia `node.exe` y las DLL vecinas a `renderer/runtime/`
+- ejecuta `PyInstaller`
+- genera una carpeta lista para distribuir
+
+## Build de macOS
+
+### Intel
 
 ```bash
 ./scripts/build_macos.sh x86_64 dist/macos-intel
 ```
 
-Salida esperada:
-
-- `dist/macos-intel/ZPLConverter.app`
-- `dist/macos-intel/ZPLConverter-x86_64.dmg`
-
-### macOS Apple Silicon
+### Apple Silicon
 
 ```bash
 ./scripts/build_macos.sh arm64 dist/macos-arm64
 ```
 
-Salida esperada:
-
-- `dist/macos-arm64/ZPLConverter.app`
-- `dist/macos-arm64/ZPLConverter-arm64.dmg`
-
-### Nota importante para distribucion en macOS
-
-El script `scripts/build_macos.sh` intenta embeber `renderer/runtime/node` y las librerias dinamicas que ese binario necesita. Eso es lo recomendado si vas a pasar el `.dmg` a otra Mac sin instalar Node manualmente.
-
-Comandos utiles:
+### Flags utiles
 
 ```bash
 STRICT_EMBED_NODE_RUNTIME=1 ./scripts/build_macos.sh x86_64 dist/macos-intel
 EMBED_NODE_RUNTIME=0 ./scripts/build_macos.sh x86_64 dist/macos-intel
 CREATE_DMG=0 ./scripts/build_macos.sh x86_64 dist/macos-intel
+SKIP_PYTHON_DEPS_INSTALL=1 SKIP_NPM_INSTALL=1 ./scripts/build_macos.sh x86_64 dist/macos-intel
 ```
 
-Que hace cada uno:
+## Variables utiles
 
-- `STRICT_EMBED_NODE_RUNTIME=1`: falla el build si no se pudo embeber Node
-- `EMBED_NODE_RUNTIME=0`: omite el runtime embebido y usa `node` externo desde PATH
-- `CREATE_DMG=0`: genera la app pero no crea el `.dmg`
+- `STRICT_EMBED_NODE_RUNTIME=1`: falla si no se pudo embeber Node
+- `EMBED_NODE_RUNTIME=0`: usa Node externo desde PATH
+- `SKIP_PYTHON_DEPS_INSTALL=1`: no reinstala dependencias Python
+- `SKIP_NPM_INSTALL=1`: no ejecuta `npm ci`
+- `ZPL_CONVERTER_TEMP_DIR=/ruta`: fuerza un directorio de trabajo temporal
 
-> Para distribucion a usuarios finales en macOS, usa siempre `STRICT_EMBED_NODE_RUNTIME=1`.
-> La app aun no esta firmada ni notarizada; para eso revisa `docs/packaging.md`.
+## CI
 
-## Troubleshooting
+El workflow [build-multiplatform.yml](./.github/workflows/build-multiplatform.yml) ahora usa los scripts reales del repo:
 
-### Error: `npm: command not found` en macOS
+- Windows x64
+- macOS Intel
+- macOS Apple Silicon
 
-Ese error indica que Node.js/npm no esta instalado o no esta en PATH.
-
-Instalacion recomendada con Homebrew:
-
-**Intel Mac**
-
-```bash
-brew install node@20
-echo 'export PATH="/usr/local/opt/node@20/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-node -v
-npm -v
-```
-
-**Apple Silicon (M1+)**
-
-```bash
-brew install node@20
-echo 'export PATH="/opt/homebrew/opt/node@20/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-node -v
-npm -v
-```
-
-### Error: `No matching distribution found for PySide6...`
-
-Si aparece un error de ruedas incompatibles con PySide6 o Python 3.14:
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-Luego reintenta el build:
-
-```bash
-./scripts/build_macos.sh x86_64 dist/macos-intel
-```
-
-### Error: build de macOS con archivos viejos o caches inconsistentes
-
-Si actualizaste la rama y sigues viendo errores viejos, limpia y vuelve a probar:
-
-```bash
-rm -rf build dist renderer/runtime build/node-runtime-libs.txt
-./scripts/build_macos.sh x86_64 dist/macos-intel
-```
-
-## Estructura del repositorio
-
-```text
-.
-├── src/                      # App principal (Python + PySide6)
-├── renderer/                 # Render local de ZPL con Node + WASM
-├── pyinstaller/              # Spec y configuracion de empaquetado
-├── scripts/                  # Scripts de build por plataforma
-├── .github/workflows/        # CI para builds multiplataforma
-└── docs/                     # Documentacion adicional
-```
+Eso evita que CI genere artefactos distintos a los builds locales.
 
 ## Documentacion adicional
 
-- `docs/packaging.md`: detalle de packaging, CI/CD y firma/notarizacion en macOS
+- [Arquitectura](./docs/architecture.md)
+- [Build de Windows](./docs/build-windows.md)
+- [Packaging multiplataforma](./docs/packaging.md)
+
+## Troubleshooting
+
+### PowerShell bloquea el script
+
+Ejecuta el build con:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1
+```
+
+### No se encuentra Node.js
+
+Instala Node.js 20+ y confirma:
+
+```powershell
+node -v
+npm -v
+```
+
+### La app no encuentra el renderer local
+
+Verifica que existan:
+
+- `renderer/render_zpl_local.mjs`
+- `renderer/node_modules/zpl-renderer-js`
+
+### El bundle de Windows funciona en tu maquina pero no en otra
+
+Genera el build con:
+
+```powershell
+$env:STRICT_EMBED_NODE_RUNTIME = "1"
+powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1
+```
+
+Eso obliga a incluir `node.exe` dentro del bundle.

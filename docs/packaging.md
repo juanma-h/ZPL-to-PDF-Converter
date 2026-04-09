@@ -1,127 +1,96 @@
-# Estrategia de empaquetado multiplataforma
+# Packaging multiplataforma
 
-Este repositorio soporta una sola base de codigo para tres distribuciones:
+## Objetivo
+
+Mantener una sola base de codigo para:
 
 - Windows x64
-- macOS Intel (x86_64)
-- macOS Apple Silicon (arm64, M1+)
+- macOS Intel
+- macOS Apple Silicon
 
-## Estructura recomendada
+## Pieza clave
 
-```text
-.
-├── src/                      # Codigo Python de la app
-├── renderer/                 # Render local ZPL (Node + WASM)
-├── pyinstaller/
-│   └── main.spec             # Definicion de PyInstaller
-├── scripts/
-│   ├── build_windows.ps1     # Build local para Windows
-│   └── build_macos.sh        # Build local para macOS (Intel/ARM)
-├── .github/workflows/
-│   └── build-multiplatform.yml
-└── docs/
-    └── packaging.md
-```
+El bundle incluye la carpeta `renderer/`, de modo que la app distribuida conserve:
 
-## Requisito clave de runtime
+- `render_zpl_local.mjs`
+- `node_modules/zpl-renderer-js`
+- runtime de Node embebido cuando el build lo prepara
 
-La app intenta usar primero un runtime de Node.js embebido dentro de `renderer/runtime/node` (incluido en el bundle de PyInstaller durante el build de macOS). Si no existe, usa `node` desde PATH.
+Eso se define en [pyinstaller/main.spec](../pyinstaller/main.spec).
 
-Tambien requiere un entorno Python con dependencias compatibles (PySide6 y Pillow se definen por rango en `requirements.txt`).
+## Windows
 
-> Recomendacion: para distribucion a usuarios finales en macOS, usa siempre el runtime embebido y evita depender de una instalacion global de Node.
+El script [scripts/build_windows.ps1](../scripts/build_windows.ps1):
 
+1. prepara caches de `pip` y `PyInstaller`
+2. detecta `node.exe` en PATH
+3. copia `node.exe` y DLL vecinas a `renderer/runtime/`
+4. ejecuta `PyInstaller`
 
-## Problema comun: fallo con Python 3.14 y PySide6
+Resultado esperado:
 
-Si aparece un error parecido a:
+- `dist/windows/ZPLConverter/`
 
-- `Could not find a version that satisfies the requirement PySide6==6.8.1`
+## macOS
 
-significa que un pin estricto no coincide con los wheels disponibles para tu version de Python/plataforma.
+El script [scripts/build_macos.sh](../scripts/build_macos.sh):
 
-### Solucion recomendada
+1. detecta el binario real de `node`
+2. copia `renderer/runtime/node`
+3. inspecciona dependencias con `otool -L`
+4. copia `.dylib` externas a `renderer/runtime/lib`
+5. ejecuta `PyInstaller`
+6. genera `.dmg` cuando `CREATE_DMG=1`
 
-1. Crear un entorno virtual limpio.
-2. Actualizar `pip`.
-3. Instalar dependencias desde `requirements.txt` actual (rangos compatibles).
-4. Ejecutar el script de build.
+Resultados esperados:
 
-```bash
-python3 -m venv venv
-source venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-./scripts/build_macos.sh x86_64 dist/macos-intel
-```
+- `dist/macos-*/ZPLConverter.app`
+- `dist/macos-*/ZPLConverter-<arch>.dmg`
 
-Resultado esperado en Intel:
+## CI
 
-- `dist/macos-intel/ZPLConverter.app`
-- `dist/macos-intel/ZPLConverter-x86_64.dmg`
+El workflow [build-multiplatform.yml](../.github/workflows/build-multiplatform.yml) ya no llama a `PyInstaller` directo. Ahora usa los scripts del repo:
 
-## Builds locales
+- Windows: `build_windows.ps1`
+- macOS: `build_macos.sh`
 
-### Windows
+Eso evita diferencias entre artefactos de CI y builds locales.
 
-```powershell
-./scripts/build_windows.ps1
-```
+## Variables de build
 
-Salida esperada: `dist/windows/ZPLConverter/`
+### Compartidas por los scripts
 
-### macOS Intel
+- `SKIP_PYTHON_DEPS_INSTALL=1`
+- `SKIP_NPM_INSTALL=1`
+- `STRICT_EMBED_NODE_RUNTIME=1`
+- `EMBED_NODE_RUNTIME=0`
 
-```bash
-./scripts/build_macos.sh x86_64 dist/macos-intel
-```
+### Solo macOS
 
-Salida esperada:
+- `CREATE_DMG=0`
 
-- `dist/macos-intel/ZPLConverter.app`
-- `dist/macos-intel/ZPLConverter-x86_64.dmg`
+## Runtime y fallback
 
-### macOS Apple Silicon
+En ejecucion, la app intenta:
 
-```bash
-./scripts/build_macos.sh arm64 dist/macos-arm64
-```
+1. `renderer/runtime/node(.exe)`
+2. `node` desde PATH
 
-Salida esperada:
-
-- `dist/macos-arm64/ZPLConverter.app`
-- `dist/macos-arm64/ZPLConverter-arm64.dmg`
-
-## CI/CD
-
-El workflow `.github/workflows/build-multiplatform.yml` compila en:
-
-- `windows-latest`
-- `macos-13` (Intel)
-- `macos-14` (Apple Silicon)
-
-y sube artefactos separados por plataforma.
+Si ninguno existe, falla con un mensaje claro.
 
 ## Firma y notarizacion en macOS
 
-Para distribuir fuera de desarrollo, agrega en una fase posterior:
+El repo aun no firma ni notariza automaticamente. Para distribucion publica fuera de desarrollo faltaria:
 
-1. Firma de `.app` con `codesign`.
-2. Notarizacion con `notarytool`.
-3. Staple del ticket (`xcrun stapler`).
+1. `codesign` del `.app`
+2. notarizacion con `notarytool`
+3. `stapler`
 
-Esto depende de certificados de Apple Developer y secretos en GitHub Actions.
+## Recomendacion
 
-## Notas sobre el runtime embebido de Node
+Para distribuir a usuarios finales:
 
-El script `scripts/build_macos.sh` copia el binario real de `node` detectado en PATH hacia `renderer/runtime/node` antes de ejecutar PyInstaller. En macOS, ademas inspecciona las dependencias dinamicas de `node` con `otool -L` y copia las `.dylib` no pertenecientes al sistema dentro de `renderer/runtime/lib`. Como `pyinstaller/main.spec` empaqueta toda la carpeta `renderer`, el bundle final incluye ese runtime junto al renderer local.
+- en Windows: usa `STRICT_EMBED_NODE_RUNTIME=1`
+- en macOS: usa `STRICT_EMBED_NODE_RUNTIME=1`
 
-En runtime, la app prepara `DYLD_LIBRARY_PATH` apuntando a `renderer/runtime/lib` cuando usa el Node embebido. Esto hace el bundle mas robusto que copiar solo el ejecutable de `node`, especialmente en instalaciones basadas en Homebrew.
-
-Si necesitas omitir el runtime embebido, omitir el DMG o forzar que el build falle si no se pudo embeber Node, ejecuta una de estas variantes:
-
-```bash
-EMBED_NODE_RUNTIME=0 ./scripts/build_macos.sh x86_64 dist/macos-intel
-CREATE_DMG=0 ./scripts/build_macos.sh x86_64 dist/macos-intel
-STRICT_EMBED_NODE_RUNTIME=1 ./scripts/build_macos.sh x86_64 dist/macos-intel
-```
+Asi el bundle no depende de un Node instalado manualmente.
