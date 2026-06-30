@@ -1,109 +1,52 @@
-# Arquitectura
+# Arquitectura web
 
-## Vision general
+## Principios
 
-La app se dividio en modulos pequenos para que la logica de negocio no dependa de la UI ni del empaquetado.
+- Backend y frontend tienen dependencias, pruebas y ciclos de desarrollo separados.
+- La logica ZPL no depende de FastAPI ni de React.
+- El navegador nunca controla rutas del sistema de archivos del servidor.
+- Los trabajos de conversion usan espacios temporales aislados y eliminables.
+- El renderer sigue siendo local: la aplicacion no envia ZPL a terceros.
 
-## Modulos principales
+## Flujo
 
-### `src/main.py`
+```text
+React
+  -> POST multipart/form-data
+FastAPI API
+  -> valida y crea workspace temporal
+Conversion service
+  -> Node.js + zpl-renderer-js
+  -> PNG base
+  -> composicion y metadatos con Pillow
+  -> PDF o ZIP
+FastAPI FileResponse
+  -> descarga
+  -> limpieza del workspace
+```
 
-Entry point minimo. Solo llama a `zpl_converter.app.main()`.
+## Backend
 
-### `src/zpl_converter/app.py`
+### `api/`
 
-- crea `QApplication`
-- registra metadatos de la app
-- aplica una fuente apropiada por plataforma
-- levanta la ventana principal
+Define contratos HTTP, validacion de formularios, respuestas y codigos de error. No contiene algoritmos de renderizado.
 
-### `src/zpl_converter/models.py`
+### `domain/`
 
-- constantes globales
-- `ConversionConfig`
-- `ConversionResult`
-- `RuntimeStatus`
-- `ZplDocumentStats`
+Contiene las estructuras `ConversionConfig`, `ConversionResult`, `RuntimeStatus` y `ZplDocumentStats`.
 
-### `src/zpl_converter/zpl_parser.py`
+### `services/`
 
-Responsable de inspeccionar el ZPL antes de convertir:
+- `zpl_parser.py`: separacion de etiquetas y lectura de `^PQ`.
+- `runtime.py`: localizacion multiplataforma de Node.js.
+- `renderer.py`: ejecucion controlada del proceso Node.
+- `image_ops.py`: PDF, DPI y composicion multicanal.
+- `conversion.py`: orquestacion del caso de uso.
 
-- separa etiquetas
-- detecta `^PQ`
-- calcula cantidad total estimada
+## Frontend
 
-Este modulo es puro y facil de probar.
+React organiza la pantalla en componentes independientes. TypeScript tipa los contratos compartidos en el cliente, mientras `api/client.ts` concentra toda comunicacion HTTP. El hook `useZplConverter` coordina estados de analisis, conversion, error y descarga.
 
-### `src/zpl_converter/runtime.py`
+## Produccion
 
-Encapsula la deteccion de rutas de runtime:
-
-- raiz en modo desarrollo
-- raiz en modo PyInstaller
-- renderer local
-- `node` embebido
-- variables de entorno para librerias dinamicas
-
-### `src/zpl_converter/renderer.py`
-
-Adaptador entre Python y el renderer Node:
-
-- construye el comando
-- ejecuta `render_zpl_local.mjs`
-- interpreta la salida JSON
-- convierte errores de subprocess a mensajes utiles para la app
-
-### `src/zpl_converter/image_ops.py`
-
-Postproceso de imagenes:
-
-- unir PNG a PDF
-- escribir metadata DPI
-- composicion multicanal lado a lado
-
-### `src/zpl_converter/conversion.py`
-
-Orquestador principal del flujo:
-
-- valida entrada
-- analiza ZPL
-- llama al renderer
-- decide PNG o PDF
-- usa staging temporal controlado por la app
-
-La intencion es que este modulo pueda reutilizarse fuera de Qt.
-
-### `src/zpl_converter/ui/`
-
-Contiene la capa visual:
-
-- `theme.py`: stylesheet y sombras
-- `widgets.py`: tarjetas, tiles y drag-and-drop
-- `main_window.py`: layout, `QSettings`, acciones de usuario y worker Qt
-
-## Flujo de conversion
-
-1. Usuario selecciona archivo y configuracion.
-2. La UI analiza el ZPL y actualiza el resumen en vivo.
-3. La conversion corre en un `QThread`.
-4. Python invoca Node para generar PNG base.
-5. Si aplica, Python recompone multicanal.
-6. Si aplica, Python genera el PDF final.
-7. La UI muestra resultado y puede abrir la salida.
-
-## Compatibilidad multiplataforma
-
-- Windows: puede embeber `node.exe` dentro del bundle
-- macOS: puede embeber `node` y sus dependencias dinamicas
-- CI: usa los scripts reales del repo para evitar diferencias entre local y GitHub Actions
-
-## Pruebas
-
-La cobertura actual se enfoca en piezas puras:
-
-- parsing de ZPL
-- parseo de salida del renderer
-- composicion de imagenes
-
-La UI y los builds se validan con smoke tests manuales o de entorno.
+El build de Vite produce archivos estaticos en `frontend/dist`. La imagen Docker copia ese resultado y FastAPI lo sirve en `/`, manteniendo API y frontend bajo el mismo origen.

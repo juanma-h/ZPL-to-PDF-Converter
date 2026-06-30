@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 
-
-PROJECT_SRC = Path(__file__).resolve().parents[1] / "src"
-if str(PROJECT_SRC) not in sys.path:
-    sys.path.insert(0, str(PROJECT_SRC))
-
-from zpl_converter.zpl_parser import analyze_zpl_text, extract_quantity_from_label, split_zpl_labels
+from backend.app.services.zpl_parser import (
+    analyze_zpl_text,
+    extract_quantity_from_label,
+    split_zpl_labels,
+)
 
 
 class ZplParserTests(unittest.TestCase):

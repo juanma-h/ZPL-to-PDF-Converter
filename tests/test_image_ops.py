@@ -1,31 +1,21 @@
 from __future__ import annotations
 
-import shutil
-import sys
+import tempfile
 import unittest
 from pathlib import Path
-from uuid import uuid4
 
 from PIL import Image
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PROJECT_SRC = PROJECT_ROOT / "src"
-if str(PROJECT_SRC) not in sys.path:
-    sys.path.insert(0, str(PROJECT_SRC))
-
-from zpl_converter.image_ops import compose_labels_side_by_side, ensure_pdf_extension
+from backend.app.services.image_ops import compose_labels_side_by_side, ensure_pdf_extension
 
 
 class ImageOpsTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp_root = PROJECT_ROOT / "build" / "tmp" / "tests"
-        self.tmp_root.mkdir(parents=True, exist_ok=True)
-        self.tmp_dir = self.tmp_root / f"image-ops-{uuid4().hex[:8]}"
-        self.tmp_dir.mkdir(parents=True, exist_ok=False)
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="zpl-image-ops-")
+        self.tmp_dir = Path(self.temp_dir.name)
 
     def tearDown(self) -> None:
-        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+        self.temp_dir.cleanup()
 
     def create_image(self, name: str, size: tuple[int, int], color: str) -> str:
         path = self.tmp_dir / name
@@ -53,6 +43,41 @@ class ImageOpsTests(unittest.TestCase):
         self.assertEqual(len(output_files), 1)
         merged = Image.open(output_files[0])
         self.assertEqual(merged.size, (200, 50))
+        merged.close()
+
+    def test_compose_labels_side_by_side_applies_die_cut_margin(self) -> None:
+        image_paths = [
+            self.create_image("one-margin.png", (100, 50), "red"),
+            self.create_image("two-margin.png", (80, 40), "blue"),
+        ]
+        output_files = compose_labels_side_by_side(
+            image_paths=image_paths,
+            output_dir=str(self.tmp_dir),
+            output_prefix="merged-margin",
+            channels_per_row=2,
+            label_margin_px=10,
+        )
+
+        self.assertEqual(len(output_files), 1)
+        merged = Image.open(output_files[0])
+        self.assertEqual(merged.size, (240, 70))
+        merged.close()
+
+    def test_compose_single_label_with_die_cut_margin_creates_padded_canvas(self) -> None:
+        image_paths = [
+            self.create_image("one-single-margin.png", (60, 30), "green"),
+        ]
+        output_files = compose_labels_side_by_side(
+            image_paths=image_paths,
+            output_dir=str(self.tmp_dir),
+            output_prefix="single-margin",
+            channels_per_row=1,
+            label_margin_px=8,
+        )
+
+        self.assertEqual(len(output_files), 1)
+        merged = Image.open(output_files[0])
+        self.assertEqual(merged.size, (76, 46))
         merged.close()
 
 
