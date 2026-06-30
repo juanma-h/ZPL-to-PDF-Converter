@@ -1,7 +1,29 @@
+# Python
 .venv/
+venv/
 __pycache__/
-*.pyc
-dist/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+frontend/dist/
+renderer/runtime/
+
+# Local environment
+.env
+.DS_Store
+
+# Generated output
 build/
-*.spec
-renderer/node_modules/
+dist/
+coverage/
+*.pdf
+*.zip
+
+# IDE
+.agents/
+.idea/
+.vscode/

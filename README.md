@@ -1,76 +1,109 @@
-# ZPL to PDF/PNG Converter (Local, sin API)
+# ZPL Converter Web
 
-Aplicacion de escritorio para convertir archivos ZPL (`.txt`) a:
+Aplicacion web para convertir documentos ZPL a PDF o paquetes PNG mediante un renderer local. El repositorio usa una arquitectura monorepo con backend y frontend independientes.
 
-- un PDF con todas las etiquetas
-- multiples PNG (una imagen por etiqueta)
+## Arquitectura
 
-La conversion es **100% local**, sin depender de Labelary ni de internet.
+```text
+.
+|-- backend/                 # API FastAPI y logica de negocio
+|   `-- app/
+|       |-- api/             # Endpoints y contratos HTTP
+|       |-- core/            # Configuracion y errores compartidos
+|       |-- domain/          # Modelos de dominio
+|       `-- services/        # Parser, renderer, imagenes y conversion
+|-- frontend/                # React + TypeScript + Vite
+|   `-- src/
+|       |-- api/             # Cliente HTTP
+|       |-- components/      # Componentes visuales
+|       |-- hooks/           # Estado y casos de uso de la interfaz
+|       |-- styles/          # Sistema visual responsive
+|       `-- types/           # Contratos TypeScript
+|-- renderer/                # Adaptador Node.js para zpl-renderer-js
+|-- tests/                   # Pruebas del backend
+|-- Dockerfile               # Imagen de produccion
+`-- compose.yaml             # Ejecucion local en contenedor
+```
 
-## Stack
-
-- UI desktop: `PySide6` (Python)
-- Conversion a imagen: `zpl-renderer-js` (Node.js + WebAssembly, local)
-- Union a PDF: `Pillow` (Python)
+La logica de parsing, renderizado, composicion y generacion de PDF se conserva en `backend/app/services`. La API adapta las rutas locales de la antigua aplicacion desktop a cargas y descargas HTTP.
 
 ## Requisitos
 
-- Python 3.11+ (recomendado)
-- Node.js 20+ (recomendado)
+- Python 3.11+
+- Node.js 22+
+- npm 10+
 
-## Instalacion
+## Desarrollo local
 
-### 1) Dependencias Python
+### 1. Backend
 
-```bash
+```powershell
 python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
 
-### 2) Dependencias del renderer local
-
-```bash
 cd renderer
-npm install
+npm ci
 cd ..
+
+uvicorn backend.app.main:app --reload
 ```
 
-## Ejecutar
+API: <http://127.0.0.1:8000/api/v1/docs>
 
-```bash
-python src/main.py
+### 2. Frontend
+
+En otra terminal:
+
+```powershell
+cd frontend
+npm ci
+npm run dev
 ```
 
-## Como funciona la conversion local
+Aplicacion: <http://localhost:5173>
 
-1. La app lee el `.txt` con ZPL.
-2. Ejecuta `renderer/render_zpl_local.mjs` con `node`.
-3. El renderer genera PNG locales (sin red).
-4. Si elegiste PDF, la app une los PNG en un unico PDF.
+Vite redirige `/api` hacia el backend durante desarrollo.
 
-## Mejorar nitidez de letras y numeros
+## Pruebas y calidad
 
-Si notas texto pixelado:
+```powershell
+python -m pytest
+ruff check backend tests
 
-- Usa `Resolucion (dpmm)` entre `12` y `24` (300-600 DPI aprox).
-- Usa `Calidad de render` en `Alta (2x recomendada)` o `Ultra (3x, mayor peso)`.
-- Para etiquetas muy pequenas, prueba aumentar tambien el tamano de fuente en el ZPL si el diseno original usa fuentes muy compactas.
-
-## Exportacion multicanal (etiquetas lado a lado)
-
-Para rollos anchos donde las etiquetas van en paralelo:
-
-- Ajusta `Canales por fila` a `2`, `3`, etc.
-- La app agrupa las etiquetas en horizontal (lado a lado) en cada salida.
-- En PDF, cada pagina representa una fila multicanal.
-- En PNG, cada archivo generado representa una fila multicanal.
-
-## Empaquetar para Windows (ejemplo)
-
-```bash
-pip install pyinstaller
-pyinstaller --noconfirm --onefile --windowed --name ZPLConverter src/main.py
+cd frontend
+npm run lint
+npm run build
 ```
 
-Si usas `--onefile`, recuerda incluir la carpeta `renderer` (script y dependencias) en tu instalador/distribucion final.
+## Produccion con Docker
+
+```powershell
+docker compose up --build
+```
+
+La aplicacion queda disponible en <http://localhost:8000>. La imagen compila React, instala el renderer Node y sirve el frontend desde FastAPI.
+
+## Variables de entorno
+
+Copia `.env.example` a `.env` si necesitas cambiar los valores:
+
+- `MAX_UPLOAD_BYTES`: tamaño maximo del archivo recibido.
+- `MAX_RENDERED_LABELS`: cantidad maxima de etiquetas por solicitud.
+- `RENDERER_TIMEOUT_SECONDS`: timeout del proceso Node.
+- `CORS_ORIGINS`: origenes permitidos, separados por coma.
+- `NODE_BINARY`: ruta opcional a un ejecutable Node especifico.
+
+## Endpoints
+
+- `GET /api/v1/health`: estado de API y renderer.
+- `POST /api/v1/zpl/analyze`: analiza etiquetas y comandos `^PQ`.
+- `POST /api/v1/zpl/convert`: devuelve un PDF o ZIP con imágenes PNG.
+
+Los archivos se procesan en un directorio temporal del servidor y se eliminan después de enviar la respuesta.
+
+## Documentacion
+
+- [Arquitectura](./docs/architecture.md)
+- OpenAPI interactivo: `/api/v1/docs`
