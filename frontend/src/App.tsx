@@ -45,16 +45,10 @@ export default function App() {
       <main>
         <section className="hero">
           <div>
-            <span className="eyebrow">CONVERSION LOCAL EN EL SERVIDOR</span>
             <h1>De ZPL a un archivo listo para usar.</h1>
             <p>
-              Carga tus etiquetas, ajusta el formato y descarga un PDF o paquete PNG sin
-              depender de servicios externos de renderizado.
+              Carga tus etiquetas, ajusta el formato y descarga un PDF o paquete PNG 
             </p>
-          </div>
-          <div className="hero__badge">
-            <strong>100%</strong>
-            <span>Renderer propio</span>
           </div>
         </section>
 
@@ -65,7 +59,7 @@ export default function App() {
                 <span className="step">1</span>
                 <div>
                   <h2>Archivo de entrada</h2>
-                  <p>Selecciona el documento que contiene tus comandos ZPL.</p>
+                  <p>Selecciona el documento que contiene tus comandos ZPL</p>
                 </div>
               </div>
               <FileDropzone
@@ -82,7 +76,7 @@ export default function App() {
                 <span className="step">2</span>
                 <div>
                   <h2>Configuracion</h2>
-                  <p>Define tamaño, calidad, formato y composicion.</p>
+                  <p>Define tamaño, calidad, formato.</p>
                 </div>
               </div>
               <SettingsPanel settings={settings} disabled={busy} onChange={setSettings} />

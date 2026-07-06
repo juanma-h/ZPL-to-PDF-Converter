@@ -52,7 +52,7 @@ export function SettingsPanel({ settings, disabled, onChange }: SettingsPanelPro
         >
           <option value="shipping">4 × 6 in — Envios</option>
           <option value="compact">4 × 3 in</option>
-          <option value="small">2 × 1 in</option>
+          <option value="small">2 × 1 in - Productos</option>
           <option value="square">1 × 1 in</option>
         </select>
       </label>

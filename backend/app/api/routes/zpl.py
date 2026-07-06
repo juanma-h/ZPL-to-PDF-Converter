@@ -73,7 +73,7 @@ async def convert(
     width_in: Annotated[float, Form(ge=0.5, le=20)] = 4.0,
     height_in: Annotated[float, Form(ge=0.5, le=20)] = 6.0,
     dpmm: Annotated[int, Form(ge=6, le=48)] = 12,
-    quality_scale: Annotated[Literal[1, 2, 3], Form()] = 2,
+    quality_scale: Annotated[int, Form(ge=1, le=3)] = 2,
     channels_per_row: Annotated[int, Form(ge=1, le=6)] = 1,
     die_cut_enabled: Annotated[bool, Form()] = False,
     die_cut_margin_mm: Annotated[float, Form(ge=0, le=25)] = 0,
