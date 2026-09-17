@@ -16,7 +16,7 @@ class ConversionConfig:
     output_path: str
     png_prefix: str
     die_cut_enabled: bool = False
-    die_cut_margin_mm: float = 0.0
+    die_cut_margin_mm: float = 0.5
     die_cut_columns: int = 1
 
     @property

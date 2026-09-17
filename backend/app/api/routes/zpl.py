@@ -76,7 +76,7 @@ async def convert(
     quality_scale: Annotated[int, Form(ge=1, le=3)] = 2,
     channels_per_row: Annotated[int, Form(ge=1, le=6)] = 1,
     die_cut_enabled: Annotated[bool, Form()] = False,
-    die_cut_margin_mm: Annotated[float, Form(ge=0, le=25)] = 0,
+    die_cut_margin_mm: Annotated[float, Form(ge=0, le=25)] = 0.5,
     die_cut_columns: Annotated[int, Form(ge=1, le=6)] = 2,
     png_prefix: Annotated[str, Form(max_length=80)] = "etiqueta",
 ) -> FileResponse:

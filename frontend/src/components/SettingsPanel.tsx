@@ -8,9 +8,7 @@ interface SettingsPanelProps {
 
 const presets = {
   shipping: { width: 4, height: 6 },
-  compact: { width: 4, height: 3 },
   small: { width: 2, height: 1 },
-  square: { width: 1, height: 1 },
 }
 
 export function SettingsPanel({ settings, disabled, onChange }: SettingsPanelProps) {
@@ -50,10 +48,8 @@ export function SettingsPanel({ settings, disabled, onChange }: SettingsPanelPro
             if (preset) onChange({ ...settings, widthIn: preset.width, heightIn: preset.height })
           }}
         >
-          <option value="shipping">4 × 6 in — Envios</option>
-          <option value="compact">4 × 3 in</option>
-          <option value="small">2 × 1 in - Productos</option>
-          <option value="square">1 × 1 in</option>
+          <option value="shipping">4 × 6 in — ETIQUETA CAJA</option>
+          <option value="small">2 × 1 in - ETIQUETA PRODUCTOS</option>
         </select>
       </label>
 
@@ -89,8 +85,6 @@ export function SettingsPanel({ settings, disabled, onChange }: SettingsPanelPro
           onChange={(event) => update('dpmm', Number(event.target.value))}
         >
           <option value="8">8 dpmm — 203 DPI</option>
-          <option value="12">12 dpmm — 300 DPI</option>
-          <option value="24">24 dpmm — 600 DPI</option>
         </select>
       </label>
       <label className="field">
@@ -100,9 +94,7 @@ export function SettingsPanel({ settings, disabled, onChange }: SettingsPanelPro
           disabled={disabled}
           onChange={(event) => update('qualityScale', Number(event.target.value) as QualityScale)}
         >
-          <option value="1">Normal (1×)</option>
-          <option value="2">Alta (2×)</option>
-          <option value="3">Ultra (3×)</option>
+          <option value="1">Normal </option>
         </select>
       </label>
 
@@ -127,8 +119,8 @@ export function SettingsPanel({ settings, disabled, onChange }: SettingsPanelPro
             <input
               type="number"
               min="0"
-              max="25"
-              step="0.5"
+              max="0.5"
+              step="0.1"
               value={settings.dieCutMarginMm}
               disabled={disabled}
               onChange={(event) => update('dieCutMarginMm', Number(event.target.value))}
